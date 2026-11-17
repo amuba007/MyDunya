@@ -39,6 +39,7 @@ const I = {
   search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.500-3.500"/></svg>',
   x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
   trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12h10l1-12M9 7V4h6v3"/></svg>',
+  check: '<svg viewBox="0 0 24 24"><path d="m5 12.500 4.500 4.500L19 7.500"/></svg>',
   wallet: '<svg viewBox="0 0 24 24"><path d="M4 7.500A2.500 2.500 0 0 1 6.500 5H18v3M4 7.500V17a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2H6.500A2.500 2.500 0 0 1 4 5.500M16 13.500h.01"/></svg>'
 };
 const JI = { Pemasukan: I.down, Pengeluaran: I.up, Transfer: I.swap };
@@ -61,6 +62,28 @@ const S = {
   prefs: store.get('prefs', {})
 };
 let installEvt = null;
+
+/* ---------- Tema & profil ---------- */
+const THEMES = [
+  { id: 'aurora', nama: 'Aurora', p1: '#4f7cff', p2: '#8b5cf6' },
+  { id: 'laut', nama: 'Laut', p1: '#0d9488', p2: '#0891b2' },
+  { id: 'zamrud', nama: 'Zamrud', p1: '#059669', p2: '#16a34a' },
+  { id: 'senja', nama: 'Senja', p1: '#ea580c', p2: '#e11d48' },
+  { id: 'sakura', nama: 'Sakura', p1: '#ec4899', p2: '#8b5cf6' },
+  { id: 'malam', nama: 'Malam', p1: '#334155', p2: '#6366f1' }
+];
+S.ui = Object.assign({ nama: '', tema: 'aurora' }, store.get('ui', {}));
+const rgbOf = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const mixHex = (a, b, t) => '#' + rgbOf(a).map((v, i) => Math.round(v * (1 - t) + rgbOf(b)[i] * t).toString(16).padStart(2, '0')).join('');
+function applyTheme() {
+  const t = THEMES.find(x => x.id === S.ui.tema) || THEMES[0], st = document.documentElement.style;
+  st.setProperty('--p1', t.p1); st.setProperty('--p2', t.p2);
+  st.setProperty('--p1rgb', rgbOf(t.p1).join(',')); st.setProperty('--p2rgb', rgbOf(t.p2).join(','));
+  st.setProperty('--grad', `linear-gradient(135deg,${t.p1} 0%,${mixHex(t.p1, t.p2, .6)} 58%,${t.p2} 100%)`);
+  COLORS[0] = t.p1; COLORS[1] = t.p2;
+}
+applyTheme();
+const displayName = () => (S.ui.nama || S.prefs.oleh || '').trim();
 
 const T = () => S.tx.concat(S.pending.map(p => ({ ...p.data, id: 'p' + p.rid, pending: true })));
 const seq = t => (typeof t.id === 'number' ? t.id : 1e9);
@@ -198,7 +221,7 @@ function viewHome() {
   const top = Object.entries(cur.cat).sort((a, b) => b[1] - a[1])[0];
   const bal = balances(), total = Object.values(bal).reduce((a, b) => a + b, 0);
   const recent = T().sort(cmp).slice(0, 5), net = cur.in - cur.out;
-  return `${head('Halo' + (S.prefs.oleh ? ', ' + S.prefs.oleh : ''), 'Ringkasan keuangan')}
+  return `${head('Halo' + (displayName() ? ', ' + displayName() : ''), 'Ringkasan keuangan')}
   ${periodBar()}
   <section class="hero">
     <p class="hero-l">Saldo bersih, ${periodLabel(r)}</p>
@@ -321,6 +344,9 @@ function viewMe() {
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
   return `${head('Akun', 'Koneksi & pengaturan')}
   <div class="stack">
+    <article class="card prof"><div class="avatar" id="avatar">${esc((S.ui.nama.trim().charAt(0) || '?').toUpperCase())}</div>
+      <div class="prof-f"><label class="lab" for="nama">Nama akun</label><input id="nama" type="text" maxlength="30" autocomplete="off" placeholder="Mis. Budi atau Keluarga Budi" value="${esc(S.ui.nama)}"></div></article>
+    <article class="card"><h4>Tema warna</h4><div class="themes">${THEMES.map(t => `<button class="theme${t.id === S.ui.tema ? ' on' : ''}" data-theme="${t.id}" aria-pressed="${t.id === S.ui.tema}" aria-label="Tema ${t.nama}"><i style="background:linear-gradient(135deg,${t.p1},${t.p2})">${t.id === S.ui.tema ? I.check : ''}</i><span>${t.nama}</span></button>`).join('')}</div></article>
     <article class="card"><h4>Koneksi ke spreadsheet</h4>
       <div class="kv"><span>Status</span><b class="${S.error ? 'neg' : 'pos'}">${S.error ? 'Offline' : 'Terhubung'}</b></div>
       <div class="kv"><span>Terakhir sinkron</span><b>${S.last ? new Date(S.last).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '–'}</b></div>
@@ -485,8 +511,9 @@ async function connect() {
 
 /* ---------- Event ---------- */
 document.addEventListener('click', async e => {
-  const el = e.target.closest('[data-tab],[data-p],[data-act],[data-id],[data-trend]'); if (!el || el.closest('#sheet-root') || el.closest('.dlg')) return;
+  const el = e.target.closest('[data-tab],[data-p],[data-act],[data-id],[data-trend],[data-theme]'); if (!el || el.closest('#sheet-root') || el.closest('.dlg')) return;
   const d = el.dataset;
+  if (d.theme) { S.ui.tema = d.theme; store.set('ui', S.ui); applyTheme(); render(); const t = THEMES.find(x => x.id === d.theme); return toast('Tema ' + t.nama + ' dipakai', 'ok'); }
   if (d.tab) return go(d.tab);
   if (d.p) {
     S.period.type = d.p;
@@ -509,11 +536,16 @@ document.addEventListener('click', async e => {
 });
 document.addEventListener('input', e => {
   const id = e.target.id;
+  if (id === 'nama') {
+    S.ui.nama = e.target.value.slice(0, 30); store.set('ui', S.ui);
+    const av = $('#avatar'); if (av) av.textContent = (S.ui.nama.trim().charAt(0) || '?').toUpperCase(); return;
+  }
   if (id === 'q') { S.hist.q = e.target.value; S.hist.limit = 60; paintHist(); }
 });
 document.addEventListener('change', e => {
   const id = e.target.id;
-  if (id === 'pf' || id === 'pt') { S.period[id === 'pf' ? 'from' : 'to'] = e.target.value; store.set('period', S.period); render(); }
+  if (id === 'nama') toast('Nama disimpan', 'ok');
+  else if (id === 'pf' || id === 'pt') { S.period[id === 'pf' ? 'from' : 'to'] = e.target.value; store.set('period', S.period); render(); }
   else if (id === 'hc') { S.hist.cat = e.target.value; S.hist.limit = 60; paintHist(); }
   else if (id === 'hf' || id === 'ht') { S.hist[id === 'hf' ? 'from' : 'to'] = e.target.value; S.hist.limit = 60; paintHist(); }
 });
